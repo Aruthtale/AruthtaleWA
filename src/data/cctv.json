@@ -1,0 +1,37 @@
+[
+    {
+        "kota": "Bandung",
+        "lokasi": "Pasteur (Arah Utara)",
+        "url": "https://pelindung.bandung.go.id/peta/"
+    },
+    {
+        "kota": "Bandung",
+        "lokasi": "Cicaheum",
+        "url": "https://pelindung.bandung.go.id/peta/"
+    },
+    {
+        "kota": "Bandung",
+        "lokasi": "Kopo (Arah Selatan)",
+        "url": "https://pelindung.bandung.go.id/peta/"
+    },
+    {
+        "kota": "Malang",
+        "lokasi": "Simpang Borobudur",
+        "url": "http://atcs.malangkota.go.id/portal"
+    },
+    {
+        "kota": "Cianjur",
+        "lokasi": "Simpang Joglo",
+        "url": "https://atcs.cianjurkab.go.id/peta"
+    },
+    {
+        "kota": "Cianjur",
+        "lokasi": "Tugu Lampu Gentur",
+        "url": "https://atcs.cianjurkab.go.id/peta"
+    },
+    {
+        "kota": "Cianjur",
+        "lokasi": "Simpang Pasir Hayam",
+        "url": "https://atcs.cianjurkab.go.id/peta"
+    }
+]
