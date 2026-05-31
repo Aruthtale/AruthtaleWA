@@ -14,7 +14,7 @@ export default async (sock, m, args) => {
         internet: { name: 'Internet Connectivity', status: '❌', details: '' },
         ai: { name: 'AI Provider (Gemini)', status: '❌', details: '' },
         spotify: { name: 'Spotify API', status: '❌', details: '' },
-        supabase: { name: 'Supabase Database', status: '❌', details: '' },
+        firebase: { name: 'Firebase Firestore', status: '❌', details: '' },
         system: { name: 'Linux System Tools', status: '❌', details: '' }
     };
 
@@ -38,11 +38,14 @@ export default async (sock, m, args) => {
         } else { checks.spotify.details = 'Not logged in.'; }
     } catch (e) { checks.spotify.details = e.message; }
 
-    // 4. Check Linux Tools
+    // 4. Check Firebase
     try {
-        const stats = await healthService.getSystemStats();
-        if (stats) checks.system.status = '✅';
-    } catch (e) { checks.system.details = 'DBus or playerctl not responding.'; }
+        const { db } = await import('../../services/firebaseService.js');
+        await db.listCollections();
+        checks.firebase.status = '✅';
+    } catch (e) { checks.firebase.details = 'Firebase connection failed or not initialized.'; }
+
+    // 5. Check Linux Tools
 
     // Build Report
     let report = `🩺 *ARUTHTALE SYSTEM DOCTOR*\n\n`;

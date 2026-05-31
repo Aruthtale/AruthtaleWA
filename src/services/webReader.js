@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { log } from '../utils/logger.js';
+import { browserService } from './browserService.js';
 
 export const webReader = {
     /**
@@ -10,24 +11,26 @@ export const webReader = {
      */
     extractText: async (url) => {
         try {
-            log.info(`Reading URL: ${url}`);
+            // Direct Browser Mode for known SPA/Heavy sites
+            if (url.includes('instagram.com') || url.includes('facebook.com') || url.includes('tiktok.com')) {
+                log.info(`Direct Browser Mode triggered for: ${url}`);
+                const browserResult = await browserService.scrape(url, { lightweight: true });
+                return browserResult.text;
+            }
+
+            log.info(`Reading URL (Fast Mode): ${url}`);
             const { data: html } = await axios.get(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
                 },
-                timeout: 10000
+                timeout: 8000
             });
 
             const $ = cheerio.load(html);
-
-            // Remove noise
             $('script, style, nav, footer, header, ads, .ads, #ads').remove();
 
-            // Try to get main content
             let text = '';
-            
-            // Heuristic for main content: article, main, or divs with lots of p tags
-            const selectors = ['article', 'main', '.post-content', '.entry-content', '#content'];
+            const selectors = ['article', 'main', '.post-content', '.entry-content', '#content', '.article-body'];
             for (const selector of selectors) {
                 const content = $(selector).text().trim();
                 if (content.length > 500) {
@@ -36,22 +39,30 @@ export const webReader = {
                 }
             }
 
-            // Fallback: take all p tags
             if (!text) {
                 text = $('p').map((i, el) => $(el).text()).get().join('\n').trim();
             }
 
             // Clean up text
-            text = text.replace(/\s+/g, ' ').slice(0, 10000); // Max 10k chars for AI
+            text = text.replace(/\s+/g, ' ').trim();
 
-            if (text.length < 100) {
-                throw new Error('Konten terlalu pendek atau gagal diekstrak.');
+            // If text is too short, it might be a JS-rendered page
+            if (text.length < 300) {
+                log.info(`Content too short (${text.length} chars). Switching to Browser Mode...`);
+                const browserResult = await browserService.scrape(url);
+                return browserResult.text;
             }
 
-            return text;
+            return text.slice(0, 10000);
         } catch (error) {
-            log.error('Web reading error:', error.message);
-            throw new Error(`Gagal membaca website: ${error.message}`);
+            log.warn(`Fast mode failed for ${url}: ${error.message}. Switching to Browser Mode...`);
+            try {
+                const browserResult = await browserService.scrape(url);
+                return browserResult.text;
+            } catch (browserError) {
+                log.error('Web reading error (both modes):', browserError.message);
+                throw new Error(`Gagal membaca website: ${browserError.message}`);
+            }
         }
     }
 };

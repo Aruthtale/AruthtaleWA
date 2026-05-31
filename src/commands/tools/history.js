@@ -1,8 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { db } from '../../services/firebaseService.js';
 import { settings } from '../../config/settings.js';
 import { log } from '../../utils/logger.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export const help = `📜 *Bantuan !history*
 
@@ -18,16 +16,15 @@ export default async (sock, m, args) => {
     const limit = Math.min(parseInt(args[0]) || 5, 10);
 
     try {
-        const { data, error } = await supabase
-            .from('memories')
-            .select('role, content, created_at')
-            .eq('user_id', remoteJid)
-            .order('created_at', { ascending: false })
-            .limit(limit);
+        const snapshot = await db.collection('memories')
+            .where('user_id', '==', remoteJid)
+            .orderBy('created_at', 'desc')
+            .limit(limit)
+            .get();
 
-        if (error) throw error;
+        const data = snapshot.docs.map(doc => doc.data());
 
-        if (!data || data.length === 0) {
+        if (data.length === 0) {
             return await sock.sendMessage(remoteJid, {
                 text: '📭 Belum ada riwayat percakapan.'
             }, { quoted: m });

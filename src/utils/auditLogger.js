@@ -1,10 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { log } from './logger.js';
-import { createClient } from '@supabase/supabase-js';
-import { settings } from '../config/settings.js';
+import { insert } from '../services/firebaseService.js';
 
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 const AUDIT_LOG_FILE = path.resolve('logs/audit.json');
 
 // Ensure logs directory exists
@@ -32,19 +30,17 @@ export const auditLogger = {
             // 1. Local File Logging (Backup)
             await fs.promises.appendFile(AUDIT_LOG_FILE, JSON.stringify(auditEntry) + '\n');
 
-            // 2. Remote Cloud Logging (Supabase)
-            if (supabase) {
-                await supabase.from('logs').insert([{
-                    event_type: auditEntry.command,
-                    level: data.level || (auditEntry.error ? 'error' : 'info'),
-                    details: JSON.stringify({
-                        user: auditEntry.user,
-                        args: auditEntry.args,
-                        status: auditEntry.status,
-                        error: auditEntry.error
-                    })
-                }]);
-            }
+            // 2. Remote Cloud Logging (Firestore)
+            await insert('logs', {
+                event_type: auditEntry.command,
+                level: data.level || (auditEntry.error ? 'error' : 'info'),
+                details: JSON.stringify({
+                    user: auditEntry.user,
+                    args: auditEntry.args,
+                    status: auditEntry.status,
+                    error: auditEntry.error
+                })
+            });
         } catch (err) {
             log.error('Audit Logging failed:', err.message);
         }

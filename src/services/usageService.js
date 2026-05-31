@@ -1,8 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { settings } from '../config/settings.js';
+import { insert, select, db } from './firebaseService.js';
 import { log } from '../utils/logger.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 const statsCache = new Map(); // Simple cache: userId -> { stats, timestamp }
 const CACHE_TTL = 30000; // 30 seconds
@@ -18,9 +15,33 @@ export const usageService = {
         try {
             // Invalidate cache on write
             statsCache.delete(userId);
-            await supabase.from('usage_log').insert([{ user_id: userId, type, amount }]);
+            await insert('usage_log', { user_id: userId, type, amount });
         } catch (error) {
             log.error('Usage Logging Failed:', error.message);
+        }
+    },
+
+    /**
+     * Clean up usage logs older than 30 days
+     */
+    cleanupUsageLog: async () => {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        try {
+            const snapshot = await db.collection('usage_log')
+                .where('created_at', '<', thirtyDaysAgo)
+                .get();
+            
+            if (snapshot.empty) return;
+
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+            
+            log.success(`Old usage logs (30+ days) cleaned up. Removed ${snapshot.size} entries.`);
+        } catch (error) {
+            log.error('Failed to cleanup usage logs:', error.message);
         }
     },
 
@@ -36,12 +57,11 @@ export const usageService = {
         today.setHours(0, 0, 0, 0);
 
         try {
-            // 2. Optimized Fetch: Only select necessary columns
-            const { data, error } = await supabase
-                .from('usage_log')
-                .select('type, amount')
-                .eq('user_id', userId)
-                .gte('created_at', today.toISOString());
+            // 2. Optimized Fetch
+            const { data, error } = await select('usage_log', [
+                { col: 'user_id', op: '==', val: userId },
+                { col: 'created_at', op: '>=', val: today }
+            ]);
 
             if (error) throw error;
 

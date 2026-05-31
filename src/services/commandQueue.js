@@ -58,7 +58,7 @@ class CommandQueue {
             
             // Timeout wrapper for command execution
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('COMMAND_TIMEOUT')), 120000)
+                setTimeout(() => reject(new Error('COMMAND_TIMEOUT')), 600000)
             );
 
             await Promise.race([

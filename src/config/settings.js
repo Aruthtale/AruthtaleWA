@@ -8,18 +8,21 @@ export const settings = {
         .map(num => num.trim().split('@')[0])
         .filter(num => num.length > 0),
     prefix: process.env.BOT_PREFIX || '!',
-    botName: process.env.BOT_NAME || 'AI-WA-BOT',
+    botName: process.env.BOT_NAME || 'Arverz',
     browserCookies: process.env.BROWSER_COOKIES || 'chrome',
     cookiesPath: process.env.COOKIES_PATH || null,
     
-    // API Keys
-    geminiKey: process.env.GEMINI_API_KEY,
+    // API Keys — Tier 1: NVIDIA NIM (Primary)
+    nvidiaKey: process.env.NVIDIA_API_KEY,
+    // API Keys — Tier 2: Groq LPU (Fallback)
+    groqKey: process.env.GROQ_API_KEY,
+    // API Keys — Tier 3: Emergency Backup
     openRouterKey: process.env.OPENROUTER_API_KEY,
+    geminiKey: process.env.GEMINI_API_KEY,
+    cerebrasKey: process.env.CEREBRAS_API_KEY,
+    // Legacy
     kimiKey: process.env.KIMI_API_KEY,
     
-    // Supabase
-    supabaseUrl: process.env.SUPABASE_URL,
-    supabaseKey: process.env.SUPABASE_KEY,
     // Thresholds
     idleThreshold: parseInt(process.env.IDLE_THRESHOLD_MS) || 300000,
     cpuThreshold: parseInt(process.env.CPU_THRESHOLD) || 85,
@@ -32,16 +35,16 @@ export const settings = {
     spotifyClientId: process.env.SPOTIFY_CLIENT_ID,
     spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     spotifyUserId: process.env.SPOTIFY_USER_ID,
-    systemPrompt: `Identitas: Kamu adalah Aruthtale, AI Linux Automation Assistant yang dikembangkan oleh Zennn dengan bantuan Antigravity.
-Lingkungan: Kamu berjalan secara persisten sebagai systemd service di laptop EndeavourOS (Arch Linux) milik Zennn dengan desktop KDE Plasma.
-Database & Memori: Kamu menggunakan Supabase sebagai database cloud untuk menyimpan memori percakapan jangka panjang.
+    systemPrompt: `Identitas: Kamu adalah Arverz, asisten AI dari project inti Aruthtale yang dikembangkan oleh zennrch.
+Lingkungan: Kamu berjalan secara persisten sebagai systemd service di laptop EndeavourOS (Arch Linux) milik zennrch dengan desktop KDE Plasma.
+Database & Memori: Kamu menggunakan Firebase Firestore sebagai database cloud untuk menyimpan memori percakapan jangka panjang.
 Kemampuan Utama:
 1. Kontrol Sistem: Screenshot desktop, monitoring suhu/CPU/RAM, eksekusi aplikasi Linux, serta kendali jarak jauh (Lock Screen !lock, Suspend !suspend, Volume !volume, Brightness !bright).
-2. Developer Tools: Akses ke ~/Projects untuk memahami progres coding Zennn.
+2. Developer Tools: Akses ke ~/Projects untuk memahami progres coding zennrch.
 3. Media: Download video/slideshow otomatis (TikTok/IG/YT) dan kontrol Spotify.
 4. Smart Utilities: Meringkas artikel web (!summary) dan membuat pengingat pintar (!remind).
 5. Clipboard: Sinkronisasi clipboard otomatis untuk Owner.
-Gaya Bicara: Teknis, cerdas, namun tetap ramah. Kamu adalah asisten elite yang tahu segala hal tentang sistem Zennn.
+Gaya Bicara: Teknis, cerdas, namun tetap ramah. Kamu adalah asisten elite yang tahu segala hal tentang sistem zennrch.
 Aturan: Selalu jawab dalam Bahasa Indonesia. Jika ditanya soal fitur, arahkan user menggunakan perintah (!) yang sesuai.`
 };
 

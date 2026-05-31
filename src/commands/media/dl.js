@@ -49,10 +49,18 @@ export default async (sock, m, args) => {
                 caption: `✅ *Item:* ${file.title}\n⏱️ *Duration:* ${file.duration}\n⚖️ *Size:* ${fileSizeInMB.toFixed(1)}MB`,
             };
 
+            const isImage = /\.(jpg|jpeg|png|webp)$/i.test(file.filePath);
+            const isGif = /\.gif$/i.test(file.filePath);
+
             if (isLarge) {
                 mediaOptions.document = { url: file.filePath };
-                mediaOptions.mimetype = 'video/mp4';
-                mediaOptions.fileName = `${file.title}.mp4`;
+                mediaOptions.mimetype = isImage ? 'image/jpeg' : (isGif ? 'image/gif' : 'video/mp4');
+                mediaOptions.fileName = file.title;
+            } else if (isImage) {
+                mediaOptions.image = { url: file.filePath };
+            } else if (isGif) {
+                mediaOptions.video = { url: file.filePath };
+                mediaOptions.gifPlayback = true;
             } else {
                 mediaOptions.video = { url: file.filePath };
                 mediaOptions.mimetype = 'video/mp4';

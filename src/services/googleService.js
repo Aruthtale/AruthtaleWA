@@ -12,11 +12,12 @@ const SCOPES = [
     'https://www.googleapis.com/auth/tasks',
     'https://www.googleapis.com/auth/calendar.events',
     'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/gmail.readonly'
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/spreadsheets'
 ];
 
-const TOKEN_PATH = path.join(process.cwd(), 'token.json');
-const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
+const TOKEN_PATH = path.join(process.cwd(), 'config/credentials/token.json');
+const CREDENTIALS_PATH = path.join(process.cwd(), 'config/credentials/credentials.json');
 
 export const googleService = {
     /**
@@ -65,6 +66,70 @@ export const googleService = {
         const { tokens } = await client.getToken(code);
         await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens));
         return true;
+    },
+
+    // --- GOOGLE SHEETS ---
+
+    /**
+     * Get the first sheet name of a spreadsheet
+     * @param {string} spreadsheetId 
+     */
+    getSheetName: async (spreadsheetId) => {
+        const { client, hasToken } = await googleService.getAuthClient();
+        if (!hasToken) throw new Error('Bot belum terhubung ke Google.');
+
+        try {
+            const sheets = google.sheets({ version: 'v4', auth: client });
+            const res = await sheets.spreadsheets.get({ spreadsheetId });
+            return res.data.sheets[0].properties.title;
+        } catch (err) {
+            if (err.message.includes('not found') || err.code === 404) {
+                throw new Error(`Spreadsheet ID tidak ditemukan atau Bot tidak memiliki akses izin (Share spreadsheet ke email Bot).`);
+            }
+            throw err;
+        }
+    },
+
+    /**
+     * Append a row to a Google Sheet (smart range detection)
+     * @param {string} spreadsheetId 
+     * @param {Array} values 
+     */
+    appendSheet: async (spreadsheetId, values) => {
+        const { client, hasToken } = await googleService.getAuthClient();
+        if (!hasToken) throw new Error('Bot belum terhubung ke Google. Gunakan !google login');
+
+        const sheets = google.sheets({ version: 'v4', auth: client });
+        
+        // Auto-detect first sheet name
+        const sheetName = await googleService.getSheetName(spreadsheetId);
+
+        await sheets.spreadsheets.values.append({
+            spreadsheetId,
+            range: `${sheetName}!A1`,
+            valueInputOption: 'RAW',
+            requestBody: {
+                values: [values]
+            }
+        });
+        return true;
+    },
+
+    /**
+     * Create a new spreadsheet and return its ID
+     * @param {string} title 
+     */
+    createSheet: async (title) => {
+        const { client, hasToken } = await googleService.getAuthClient();
+        if (!hasToken) throw new Error('Bot belum terhubung ke Google. Gunakan !google login');
+
+        const sheets = google.sheets({ version: 'v4', auth: client });
+        const res = await sheets.spreadsheets.create({
+            requestBody: {
+                properties: { title }
+            }
+        });
+        return res.data.spreadsheetId;
     },
 
     // --- GOOGLE TASKS ---

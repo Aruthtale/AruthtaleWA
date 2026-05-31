@@ -1,10 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
-import { settings } from '../config/settings.js';
+import { insert, select, db } from './firebaseService.js';
 import { log } from '../utils/logger.js';
 import { embedText } from '../ai/gemini.js';
 import { aiProvider } from '../ai/provider.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export const memoryService = {
     // 🛡️ Filter Spam agar tidak memenuhi database
@@ -19,22 +16,19 @@ export const memoryService = {
     save: async (userId, role, content) => {
         if (memoryService.isSpam(content)) return;
         try {
-            // 0. Safety check for Supabase
-            if (!supabase) return;
-
             // 1. Save to standard memories (short-term)
-            const { error: insErr } = await supabase.from('memories').insert([{ user_id: userId, role, content }]);
+            const { error: insErr } = await insert('memories', { user_id: userId, role, content });
             if (insErr) throw insErr;
             
             // 2. Save to long-term vector memory (only for significant messages)
             if (content.length > 10) {
                 const embedding = await embedText(content);
                 if (embedding) {
-                    await supabase.from('long_term_memories').insert([{
+                    await insert('long_term_memories', {
                         user_id: userId,
                         content: content,
                         embedding: embedding
-                    }]);
+                    });
                     log.memory(`Vektor memori disimpan untuk: "${content.substring(0, 30)}..."`);
                 }
             }
@@ -51,46 +45,24 @@ export const memoryService = {
         }
     },
 
-    // 🧠 Ambil riwayat dengan dukungan RAG (Semantic Search)
     getHistory: async (userId, currentMessage = '', limit = 12, format = 'gemini') => {
         try {
             let contextText = '';
 
-            // 1. Optimize RAG: Only run if message is long and looks like a question or reference
-            const shouldRunRAG = currentMessage.length > 20 && 
-                                / (ingat|pernah|dulu|waktu|tanya|cari|siapa|apa|kenapa|bagaimana) /i.test(currentMessage);
-
-            if (shouldRunRAG) {
-                try {
-                    const queryEmbedding = await embedText(currentMessage);
-                    if (queryEmbedding) {
-                        const { data: matches, error: matchErr } = await supabase.rpc('match_memories', {
-                            query_embedding: queryEmbedding,
-                            match_threshold: 0.78, // Tighter threshold
-                            match_count: 2,        // Less results for speed
-                            p_user_id: userId
-                        });
-
-                        if (!matchErr && matches?.length > 0) {
-                            contextText = matches.map(m => `[Konteks Masa Lalu: ${m.content}]`).join('\n');
-                            log.memory(`Semantic Context found (${matches.length} matches)`);
-                        }
-                    }
-                } catch (ragError) {
-                    log.warn(`RAG Search failed: ${ragError.message}`);
-                }
-            }
+            // 1. RAG (Semantic Search) - Disabled for Firestore transition
+            // Note: Requires Firestore Vector Search setup
+            /*
+            const shouldRunRAG = currentMessage.length > 20 && ...
+            */
 
             // 2. Ambil pesan terbaru
-            if (!supabase) return [];
-            const { data, error } = await supabase
-                .from('memories')
-                .select('role, content, created_at')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(limit);
+            const snapshot = await db.collection('memories')
+                .where('user_id', '==', userId)
+                .orderBy('created_at', 'desc')
+                .limit(limit)
+                .get();
 
-            if (error) throw error;
+            const data = snapshot.docs.map(doc => doc.data());
             
             // 3. Format untuk AI (Gemini vs OpenAI/Kimi)
             let history = data.reverse();
@@ -132,27 +104,28 @@ export const memoryService = {
     triggerSummarization: async (userId) => {
         try {
             // Hitung jumlah pesan
-            const { count, error: countErr } = await supabase
-                .from('memories')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', userId)
-                .neq('role', 'summary');
-
-            if (countErr) throw countErr;
+            const snapshot = await db.collection('memories')
+                .where('user_id', '==', userId)
+                .where('role', '!=', 'summary')
+                .get();
+            
+            const count = snapshot.size;
 
             if (count > 25) {
                 log.memory(`Percakapan terlalu panjang (${count} pesan). Memulai ringkasan...`);
                 
                 // Ambil 15 pesan tertua (kecuali summary)
-                const { data: oldMessages, error: fetchErr } = await supabase
-                    .from('memories')
-                    .select('id, role, content')
-                    .eq('user_id', userId)
-                    .neq('role', 'summary')
-                    .order('created_at', { ascending: true })
-                    .limit(15);
+                const oldMessagesSnapshot = await db.collection('memories')
+                    .where('user_id', '==', userId)
+                    .where('role', '!=', 'summary')
+                    .orderBy('role') // Required by Firestore when using != and orderBy
+                    .orderBy('created_at', 'asc')
+                    .limit(15)
+                    .get();
 
-                if (fetchErr) throw fetchErr;
+                const oldMessages = oldMessagesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                if (oldMessages.length === 0) return;
 
                 // Minta AI membuat ringkasan
                 const textToSummarize = oldMessages.map(m => `${m.role}: ${m.content}`).join('\n');
@@ -163,15 +136,16 @@ export const memoryService = {
                 });
 
                 // Simpan ringkasan baru
-                await supabase.from('memories').insert([{ 
+                await insert('memories', { 
                     user_id: userId, 
                     role: 'summary', 
                     content: summary 
-                }]);
+                });
 
                 // Hapus pesan lama yang sudah diringkas
-                const idsToDelete = oldMessages.map(m => m.id);
-                await supabase.from('memories').delete().in('id', idsToDelete);
+                const batch = db.batch();
+                oldMessagesSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
 
                 log.success(`Memory summarized & pruned. Context size optimized.`);
             }
@@ -182,8 +156,12 @@ export const memoryService = {
 
     // 🏓 Ping DB
     ping: async () => {
-        const { error } = await supabase.from('memories').select('id').limit(1);
-        if (error) throw error;
-        return true;
+        try {
+            await db.collection('memories').limit(1).get();
+            return true;
+        } catch (error) {
+            log.error('DB Ping Error:', error.message);
+            throw error;
+        }
     }
 };

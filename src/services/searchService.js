@@ -9,16 +9,21 @@ export const searchService = {
      * @returns {Promise<Array<{title: string, link: string, snippet: string}>>}
      */
     search: async (query) => {
-        // 1. Try Google Basic HTML (Very reliable)
-        let results = await searchService.google(query);
+        // 1. Try Yahoo Search (Paling reliable saat ini)
+        let results = await searchService.yahoo(query);
         if (results.length > 0) return results;
 
-        // 2. Try DuckDuckGo Lite (Fallback)
+        // 2. Try Google Basic HTML
+        log.warn('[Search] Yahoo failed, trying Google...');
+        results = await searchService.google(query);
+        if (results.length > 0) return results;
+
+        // 3. Try DuckDuckGo Lite
         log.warn('[Search] Google failed, trying DuckDuckGo...');
         results = await searchService.duckDuckGo(query);
         if (results.length > 0) return results;
 
-        // 3. Try Bing (Fallback)
+        // 4. Try Bing
         log.warn('[Search] DuckDuckGo failed, trying Bing...');
         results = await searchService.bing(query);
         if (results.length > 0) return results;
@@ -28,6 +33,44 @@ export const searchService = {
         results = await searchService.searxng(query);
         
         return results;
+    },
+
+    /**
+     * Yahoo Search Scraper (Paling Reliable)
+     */
+    yahoo: async (query) => {
+        try {
+            log.info(`[Search] Yahoo: ${query}`);
+            const searchUrl = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
+            const { data } = await axios.get(searchUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' },
+                timeout: 5000
+            });
+            
+            const $ = cheerio.load(data);
+            const results = [];
+            
+            $('.algo').each((i, el) => {
+                const title = $(el).find('h3').text().trim() || $(el).find('a').attr('aria-label') || '';
+                let link = $(el).find('a').attr('href');
+                const snippet = $(el).find('.compText, .fc-falcon').text().trim();
+                
+                if (link && link.includes('/RU=')) {
+                    try {
+                        link = decodeURIComponent(link.split('/RU=')[1].split('/RK=')[0]);
+                    } catch (e) {}
+                }
+                
+                if (title && link) {
+                    results.push({ title, link, snippet: snippet.substring(0, 300) });
+                }
+            });
+            
+            return results.slice(0, 5);
+        } catch (e) {
+            log.warn(`[Search] Yahoo failed: ${e.message}`);
+            return [];
+        }
     },
 
     /**
@@ -199,5 +242,89 @@ export const searchService = {
             }
         }
         return [];
+    },
+
+    /**
+     * Google Maps Scraper (Places API Tool Alternative)
+     * Mengambil data nama, website, dan nomor telepon
+     */
+    googleMapsScraper: async (keyword, location) => {
+        try {
+            const query = `${keyword} di ${location}`;
+            log.info(`[GoogleMaps] Scraping local data via webResearchService for: ${query}`);
+            
+            const { webResearchService } = await import('./webResearchService.js');
+            const { aiRouter } = await import('../ai/router.js');
+            
+            // Cari data lokal mendalam
+            const rawData = await webResearchService.searchWeb(`${keyword} ${location} rekomendasi alamat nomor telepon`, 3);
+            
+            const prompt = `Dari data hasil pencarian berikut, berikan daftar 5 nama bisnis (${keyword}) di wilayah ${location}. 
+            Ekstrak nama, website (jika ada), dan nomor telepon (jika ada).
+            Jika tidak ada website, biarkan kosong (""). Jangan isi dengan link direktori (seperti tripadvisor/pergikuliner).
+            
+            Data Pencarian:
+            ${rawData}
+            
+            Kembalikan HANYA format JSON array persis seperti ini (tanpa markdown, tanpa teks pembuka/penutup):
+            [{"name": "Nama Kafe", "website": "URL atau kosong", "phone": "08xxx atau Tidak ada"}]`;
+
+            const extractResult = await aiRouter.route(prompt, { task: 'GENERAL' });
+            
+            let mapData = [];
+            try {
+                mapData = JSON.parse(extractResult.text.match(/\[[\s\S]*\]/)[0]);
+            } catch (e) {
+                log.error(`[GoogleMaps] Failed to parse AI JSON: ${e.message}`);
+                // Fallback kosong jika gagal
+            }
+            
+            // Clean up
+            mapData = mapData.map(item => {
+                let website = item.website || "";
+                if (website.includes("facebook.com") || website.includes("instagram.com") || website.includes("tripadvisor.com") || website.includes("pergikuliner.com") || website.includes("gojek.com") || website.includes("grab.com")) {
+                    website = ""; 
+                }
+                return {
+                    name: item.name || `Contoh ${keyword}`,
+                    website: website,
+                    phone: item.phone || "Tidak ada",
+                    link: website || ""
+                };
+            }).filter(item => !item.name.toLowerCase().includes("contoh"));
+
+            return mapData.length > 0 ? mapData : [{ name: `Contoh ${keyword} di ${location} (Data tidak ditemukan)`, website: "", phone: "0812-xxxx-xxxx" }];
+        } catch (e) {
+            log.error(`[GoogleMaps] Failed: ${e.message}`);
+            return [{ name: `Contoh ${keyword} di ${location} (Error Sistem)`, website: "", phone: "Tidak ada" }];
+        }
+    },
+
+    /**
+     * OSINT Social Finder Tool (Instagram)
+     */
+    instagramFinder: async (businessName, location) => {
+        try {
+            const query = `site:instagram.com "${businessName}" ${location}`;
+            log.info(`[OSINT] Finding Instagram for: ${businessName}`);
+            
+            const results = await searchService.search(query);
+            
+            for (const r of results) {
+                if (r.link.includes('instagram.com/')) {
+                    const parts = r.link.split('instagram.com/');
+                    if (parts.length > 1) {
+                        const username = parts[1].split('/')[0].split('?')[0];
+                        if (username && username !== 'p' && username !== 'explore') {
+                            return `@${username}`;
+                        }
+                    }
+                }
+            }
+            return "TIDAK ADA";
+        } catch (e) {
+            log.error(`[OSINT] Failed Instagram Search: ${e.message}`);
+            return "TIDAK ADA";
+        }
     }
 };

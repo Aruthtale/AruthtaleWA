@@ -4,11 +4,8 @@ import { log } from '../utils/logger.js';
 import { fsTools, toolDefinitions } from '../utils/fsTools.js';
 
 const GEMINI_MODELS = [
-    'gemini-3-flash-preview',
-    'gemini-3.1-flash-image-preview',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
+    'gemini-3.5-flash',
+    'gemini-3-flash-preview'
 ];
 
 /**
@@ -167,7 +164,7 @@ export const askGeminiStreaming = async (prompt, options = {}) => {
 const embeddingCache = new Map();
 
 /**
- * Embed Text for Vector Search (Supabase)
+ * Embed Text for Vector Search
  */
 export const embedText = async (text) => {
     if (!text) return null;
@@ -175,36 +172,18 @@ export const embedText = async (text) => {
     if (embeddingCache.has(cacheKey)) return embeddingCache.get(cacheKey);
 
     try {
-        // Use embedding-001 as it's the most stable across all regions/keys
-        const model = "models/text-embedding-004"; 
-        const url = `https://generativelanguage.googleapis.com/v1beta/${model}:embedContent?key=${settings.geminiKey}`;
+        const model = "gemini-embedding-2"; 
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${settings.geminiKey}`;
         
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: model,
                 content: { parts: [{ text }] }
             })
         });
 
         if (!response.ok) {
-            // Fallback to older but extremely stable model if 404
-            if (response.status === 404) {
-                const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${settings.geminiKey}`;
-                const fallbackRes = await fetch(fallbackUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: "models/embedding-001",
-                        content: { parts: [{ text }] }
-                    })
-                });
-                if (fallbackRes.ok) {
-                    const fbData = await fallbackRes.json();
-                    return fbData.embedding.values;
-                }
-            }
             throw new Error(`Embedding Error: ${response.status}`);
         }
         const data = await response.json();

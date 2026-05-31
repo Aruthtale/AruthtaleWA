@@ -2,6 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { settings } from '../config/settings.js';
 import { log } from '../utils/logger.js';
+import { firebaseBridge } from '../services/firebaseBridge.js';
 
 const execAsync = promisify(exec);
 
@@ -22,6 +23,13 @@ export const startResourceWatcher = (sock) => {
             
             const ramUsage = parseFloat(memOut);
             const cpuUsage = parseFloat(cpuOut);
+
+            // Sync to Firebase (Hermes Bridge)
+            await firebaseBridge.uploadSystemMetrics({
+                ram_usage: ramUsage,
+                cpu_usage: cpuUsage,
+                timestamp: Date.now()
+            });
 
             const now = Date.now();
 

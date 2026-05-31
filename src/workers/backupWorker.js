@@ -25,7 +25,7 @@ export const backupService = {
         try {
             // Compress logs, session, and .env
             // We use tar because it's native to Linux and very efficient
-            const command = `tar -czf "${filePath}" logs/ session_v2/ .env information.md cookies.txt 2>/dev/null`;
+            const command = `tar -czf "${filePath}" logs/ session_v2/ .env docs/information.md config/credentials/cookies.txt 2>/dev/null`;
             await execAsync(command);
 
             log.success(`Backup created: ${fileName}`);

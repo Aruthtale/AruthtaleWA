@@ -3,14 +3,13 @@ import { log } from '../utils/logger.js';
 import { aiProvider } from '../ai/provider.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { createClient } from '@supabase/supabase-js';
+import { db } from './firebaseService.js';
 import { googleService } from './googleService.js';
 import { searchService } from './searchService.js';
 import fs from 'fs/promises';
 import path from 'path';
 
 const execAsync = promisify(exec);
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 /**
  * automationService
@@ -126,11 +125,12 @@ export const automationService = {
                 const endOfDay = new Date();
                 endOfDay.setHours(23,59,59,999);
 
-                const { data: reminders } = await supabase
-                    .from('reminders')
-                    .select('*')
-                    .gte('scheduled_time', startOfDay.toISOString())
-                    .lte('scheduled_time', endOfDay.toISOString());
+                const snapshot = await db.collection('reminders')
+                    .where('scheduled_time', '>=', startOfDay.toISOString())
+                    .where('scheduled_time', '<=', endOfDay.toISOString())
+                    .get();
+
+                const reminders = snapshot.docs.map(doc => doc.data());
 
                 const localReminders = reminders?.map(r => `• [Local] ${r.message}`).join('\n') || '';
                 
@@ -191,12 +191,13 @@ export const automationService = {
                 gpu = `${gpuOut.trim()}%`;
             } catch (e) {}
 
-            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-            const { data: chats } = await supabase
-                .from('memories')
-                .select('role, content, created_at')
-                .gte('created_at', twoHoursAgo)
-                .order('created_at', { ascending: true });
+            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            const snapshot = await db.collection('memories')
+                .where('created_at', '>=', twoHoursAgo)
+                .orderBy('created_at', 'asc')
+                .get();
+            
+            const chats = snapshot.docs.map(doc => doc.data());
 
             let summaryContent = "Tidak ada aktivitas percakapan dalam 2 jam terakhir.";
             
@@ -290,6 +291,15 @@ export const automationService = {
             }
         } catch (err) {
             log.error('checkEmails Critical Error:', err.message);
+            if (err.message && err.message.includes('invalid_grant')) {
+                log.warn('Google OAuth Token is invalid or expired. Removing token.json to prevent further errors.');
+                const TOKEN_PATH = path.join(process.cwd(), 'config/credentials/token.json');
+                fs.unlink(TOKEN_PATH).catch(e => log.error('Failed to remove token.json:', e.message));
+                
+                sock.sendMessage(ownerJid, { 
+                    text: `⚠️ *GOOGLE INTEGRATION ALERT*\n\nSesi login Google Anda telah kedaluwarsa atau tidak valid (invalid_grant). Fitur otomatis dijeda.\n\nSilakan login kembali dengan mengetik:\n*!google login*` 
+                }).catch(e => log.error('Failed to send notification:', e.message));
+            }
         }
     },
 

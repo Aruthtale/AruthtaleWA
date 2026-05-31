@@ -1,10 +1,10 @@
 [Unit]
-Description=AI WhatsApp Bot - Linux Automation Assistant
+Description=Arverz - AI Linux Automation Assistant
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Projects/ai-wa-bot
+WorkingDirectory=%h/Projects/App&Bot/Arverz
 ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=10

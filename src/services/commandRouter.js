@@ -20,7 +20,11 @@ const COOLDOWN_MAP = {
     'search': 10000,
     'stiker': 5000,
     'qr': 5000,
-    'removebg': 30000
+    'removebg': 30000,
+    'hd': 30000,
+    'hdvideo': 60000,
+    'webss': 20000,
+    'leads': 60000
 };
 
 /**
@@ -71,7 +75,8 @@ export const routeCommand = async (sock, m, text) => {
         'suspend': 'sys',
         'cp': 'copy',
         'sticker': 'stiker',
-        'vstiker': 'vsticker'
+        'vstiker': 'vsticker',
+        'deepresearch': 'research'
     };
     const targetCommand = aliases[commandName] || commandName;
 
@@ -100,7 +105,7 @@ export const routeCommand = async (sock, m, text) => {
     m.isOwner = isOwner;
     m.isAuthorized = isAuthorized;
 
-    const authorizedCommands = ['summary', 'remind', 'gen', 'edit', 'mp3', 'auth', 'stiker', 'vsticker', 'removebg', 'transkrip', 'linestiker'];
+    const authorizedCommands = ['summary', 'remind', 'gen', 'edit', 'mp3', 'auth', 'stiker', 'vsticker', 'removebg', 'transkrip', 'linestiker', 'research', 'hd', 'leads'];
     const publicCommands = ['ask', 'dl', 'img', 'myid', 'menu', 'help', 'search', 'ocr'];
     
     const isPublic = publicCommands.includes(targetCommand);

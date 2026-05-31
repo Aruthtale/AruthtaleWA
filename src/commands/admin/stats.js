@@ -2,10 +2,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { settings } from '../../config/settings.js';
 import { authService } from '../../services/authService.js';
-import { createClient } from '@supabase/supabase-js';
+import { db } from '../../services/firebaseService.js';
 
 const execAsync = promisify(exec);
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export default async (sock, m, args) => {
     const remoteJid = m.key.remoteJid;
@@ -19,22 +18,28 @@ export default async (sock, m, args) => {
         const { stdout: diskInfo } = await execAsync("df -h . | tail -1 | awk '{print $4}'");
         const freeSpace = diskInfo.trim();
 
-        // 2. Get User Counts (Supabase)
-        const { data: whitelistData } = await supabase.from('whitelist').select('number', { count: 'exact' });
-        const dynamicUserCount = whitelistData ? whitelistData.length : 0;
+        // 2. Get User Counts (Firestore)
+        const whitelistSnapshot = await db.collection('whitelist').get();
+        const dynamicUserCount = whitelistSnapshot.size;
         const staticUserCount = settings.authorizedNumbers.length;
 
         // 3. Get Cache Stats
-        const { count: cacheCount } = await supabase.from('media_cache').select('*', { count: 'exact', head: true });
+        const cacheCountSnapshot = await db.collection('media_cache').count().get();
+        const cacheCount = cacheCountSnapshot.data().count;
 
         // 4. Get Daily Usage (Total across all users)
         const today = new Date();
         today.setHours(0,0,0,0);
-        const { data: usageData } = await supabase.from('usage_log').select('type, amount').gte('created_at', today.toISOString());
+        
+        const usageSnapshot = await db.collection('usage_log')
+            .where('created_at', '>=', today)
+            .get();
         
         let totalTokens = 0;
         let totalDownloadMb = 0;
-        usageData?.forEach(row => {
+        
+        usageSnapshot.forEach(doc => {
+            const row = doc.data();
             if (row.type === 'AI_TOKENS') totalTokens += parseFloat(row.amount);
             if (row.type === 'DOWNLOAD_MB') totalDownloadMb += parseFloat(row.amount);
         });

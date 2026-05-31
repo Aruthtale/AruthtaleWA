@@ -1,9 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
 import { settings } from '../config/settings.js';
 import { log } from '../utils/logger.js';
 import { aiProvider } from '../ai/provider.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
+import { db, insert } from './firebaseService.js';
 
 export const reminderService = {
     /**
@@ -30,7 +28,53 @@ export const reminderService = {
     },
 
     /**
-     * Save reminder to Supabase
+     * Save reminder to Firestore
+     */
+    saveReminder: async (data) => {
+        const { error } = await insert('reminders', {
+            ...data,
+            status: 'pending'
+        });
+        if (error) throw new Error(`Database Error: ${error.message}`);
+        return true;
+    },
+
+    /**
+     * Get pending reminders that are due
+     */
+    getPendingReminders: async () => {
+        try {
+            const now = new Date().toISOString();
+            const snapshot = await db.collection('reminders')
+                .where('status', '==', 'pending')
+                .where('scheduled_time', '<=', now)
+                .get();
+            
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+            log.error('Firestore getPendingReminders Error:', error.message);
+            return [];
+        }
+    },
+
+    /**
+     * Mark reminder as completed
+     */
+    markCompleted: async (id) => {
+        try {
+            await db.collection('reminders').doc(id).update({ 
+                status: 'completed',
+                completed_at: new Date().toISOString()
+            });
+            return true;
+        } catch (error) {
+            log.error('Firestore markCompleted Error:', error.message);
+            return false;
+        }
+    },
+
+    /**
+     * Public method to schedule a reminder
      */
     schedule: async (time, message, remoteJid) => {
         const userId = remoteJid.split('@')[0];
@@ -41,18 +85,13 @@ export const reminderService = {
             throw new Error('Waktu pengingat sudah lewat.');
         }
 
-        // 1. Save to Supabase
-        const { error } = await supabase
-            .from('reminders')
-            .insert([{
-                user_id: userId,
-                remote_jid: remoteJid,
-                scheduled_time: targetDate.toISOString(),
-                message: message,
-                status: 'pending'
-            }]);
-
-        if (error) throw new Error(`Database Error: ${error.message}`);
+        // 1. Save to Firestore
+        await reminderService.saveReminder({
+            user_id: userId,
+            remote_jid: remoteJid,
+            scheduled_time: targetDate.toISOString(),
+            message: message
+        });
 
         // 2. Sync to Google Tasks (Background)
         try {
@@ -64,7 +103,6 @@ export const reminderService = {
             log.success('Reminder synced to Google Tasks.');
         } catch (err) {
             log.warn('Google Tasks Sync Failed:', err.message);
-            // Don't throw error here, so Supabase reminder still works
         }
 
         return true;
@@ -79,18 +117,9 @@ export const reminderService = {
         // Scan every 30 seconds
         setInterval(async () => {
             try {
-                const now = new Date().toISOString();
-                
-                // Fetch pending reminders that are due
-                const { data, error } = await supabase
-                    .from('reminders')
-                    .select('*')
-                    .eq('status', 'pending')
-                    .lte('scheduled_time', now);
+                const reminders = await reminderService.getPendingReminders();
 
-                if (error) throw error;
-
-                for (const reminder of data) {
+                for (const reminder of reminders) {
                     log.info(`🔔 Firing reminder for ${reminder.user_id}: ${reminder.message}`);
                     
                     // Send WhatsApp notification
@@ -99,10 +128,7 @@ export const reminderService = {
                     });
 
                     // Update status
-                    await supabase
-                        .from('reminders')
-                        .update({ status: 'completed' })
-                        .eq('id', reminder.id);
+                    await reminderService.markCompleted(reminder.id);
                 }
             } catch (err) {
                 log.error('Reminder Scanner Error:', err.message);
@@ -110,3 +136,4 @@ export const reminderService = {
         }, 30000);
     }
 };
+

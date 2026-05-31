@@ -179,6 +179,7 @@ export const connectToWhatsApp = async () => {
                                     pushName: 'Poll Controller',
                                     skipRateLimit: true
                                 });
+                                return; // 🛑 Added return to prevent double processing
                             }
                         } else {
                             log.warn('ℹ️ Poll update diterima tapi dekripsi gagal atau tidak ada opsi.');

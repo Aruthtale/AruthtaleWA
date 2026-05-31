@@ -1,15 +1,19 @@
 /**
- * Simple security filter to detect common prompt injection patterns
- * and malicious command attempts.
+ * Security filter to detect common prompt injection patterns
+ * and sanitize user input for system commands.
  */
 export const securityFilter = {
+    // Limits input length to prevent DoS via excessively large strings
+    MAX_INPUT_LENGTH: 1000,
+
     /**
-     * Check if a message contains prompt injection attempts
+     * Check if a message contains potential prompt injection attempts
      * @param {string} text 
      * @returns {boolean} true if malicious
      */
     isPromptInjection: (text) => {
         if (!text) return false;
+        if (text.length > securityFilter.MAX_INPUT_LENGTH) return true;
         
         const patterns = [
             /ignore all previous instructions/i,
@@ -20,19 +24,22 @@ export const securityFilter = {
             /system prompt/i,
             /bypass filtering/i,
             /forget everything/i,
-            /\b(sudo|rm -rf|mkfs|shutdown|reboot)\b/i, // Basic command protection
+            /hack/i,
+            /get root/i,
         ];
 
         return patterns.some(pattern => pattern.test(text));
     },
 
     /**
-     * Sanitize input for shell execution (used in fsTools/systemControl)
+     * Strictly sanitize input for shell execution.
+     * Uses a whitelist approach: Only allow alfanumeric, spaces, dashes, and underscores.
      */
     sanitizeShell: (input) => {
         if (typeof input !== 'string') return '';
-        // Remove potentially dangerous shell characters
-        return input.replace(/[;&|`$()>]/g, '');
+        // Only allow alfanumeric, spaces, dashes, and underscores. 
+        // Anything else is stripped.
+        return input.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim();
     }
 };
 

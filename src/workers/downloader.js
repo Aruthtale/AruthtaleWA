@@ -150,15 +150,21 @@ export const downloaderService = {
             log.info(`Executing batch: ${command}`);
             await execAsync(command);
 
-            // Find all downloaded mp4 files & generate thumbnails
+            // Find all downloaded media files & generate thumbnails
             const files = [];
-            const readdir = fs.readdirSync(outputSubDir).filter(f => f.endsWith('.mp4'));
+            const readdir = fs.readdirSync(outputSubDir)
+                .filter(f => /\.(mp4|gif|webm|mkv)$/i.test(f))
+                .sort((a, b) => {
+                    const idxA = parseInt(a.split('_')[0]) || 0;
+                    const idxB = parseInt(b.split('_')[0]) || 0;
+                    return idxA - idxB;
+                });
             
             for (let i = 0; i < readdir.length; i++) {
                 const fileName = readdir[i];
                 const entry = entries[i] || entries[0];
                 const filePath = path.join(outputSubDir, fileName);
-                const thumbPath = filePath.replace('.mp4', '.jpg');
+                const thumbPath = filePath.replace(/\.[^.]+$/, '.jpg');
                 
                 await generateThumbnail(filePath, thumbPath);
 
@@ -349,6 +355,15 @@ export const downloaderService = {
                 log.info(`Cache hit for audio ${url}`);
             }
 
+            // 🛡️ Duration Guard (Max 15 minutes)
+            const MAX_DURATION = 900; // 15 minutes in seconds
+            for (const entry of entries) {
+                if (entry.duration && entry.duration > MAX_DURATION) {
+                    const durationMins = Math.round(entry.duration / 60);
+                    throw new Error(`Durasi terlalu panjang (${durationMins} menit). Maksimal yang diizinkan adalah 15 menit agar bot tidak error.`);
+                }
+            }
+
             // 2. Download & Extract Audio
             const command = `yt-dlp ` +
                             `-x --audio-format mp3 ` +
@@ -390,5 +405,54 @@ export const downloaderService = {
         }
     },
 
+    /**
+     * Extracts transcript from YouTube videos using yt-dlp
+     * @param {string} url 
+     * @returns {Promise<string>} Plain text transcript
+     */
+    getYouTubeTranscript: async (url) => {
+        const timestamp = Date.now();
+        const tempFile = path.join(DOWNLOAD_DIR, `subs_${timestamp}`);
+        
+        try {
+            log.info(`Extracting transcript for: ${url}`);
+            const userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+            const cookiesArg = settings.cookiesPath ? `--cookies "${settings.cookiesPath}"` : `--cookies-from-browser ${settings.browserCookies}`;
+            
+            // Attempt to get English or Indonesian subtitles (auto-generated)
+            // --write-auto-subs: write automatic captions
+            // --skip-download: don't download the video
+            // --sub-lang: try indonesian then english
+            const command = `yt-dlp --write-auto-subs --skip-download --sub-format srt --sub-lang "id,en" ${cookiesArg} --user-agent "${userAgent}" "${url}" -o "${tempFile}.%(ext)s"`;
+            
+            await execAsync(command);
 
-};
+            // Find the downloaded subtitle file (could be .id.srt or .en.srt)
+            const files = fs.readdirSync(DOWNLOAD_DIR).filter(f => f.startsWith(`subs_${timestamp}`) && f.endsWith('.srt'));
+            
+            if (files.length === 0) {
+                throw new Error('Subtitle tidak ditemukan.');
+            }
+
+            const subPath = path.join(DOWNLOAD_DIR, files[0]);
+            const content = fs.readFileSync(subPath, 'utf-8');
+            
+            // Clean up SRT format (remove timestamps and numbers)
+            const cleanTranscript = content
+                .replace(/\d+\r?\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}/g, '') // Remove SRT timing lines
+                .replace(/<[^>]*>/g, '') // Remove HTML-like tags
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line && !/^\d+$/.test(line)) // Remove empty lines and line numbers
+                .join(' ');
+
+            // Cleanup
+            files.forEach(f => fs.unlinkSync(path.join(DOWNLOAD_DIR, f)));
+
+            return cleanTranscript;
+        } catch (error) {
+            log.warn('Failed to get YouTube transcript:', error.message);
+            throw error;
+        }
+    },
+}

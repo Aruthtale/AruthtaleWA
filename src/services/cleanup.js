@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { log } from '../utils/logger.js';
+import { usageService } from './usageService.js';
+import { firebaseRetentionService } from './firebaseRetentionService.js';
 
 // Folder yang akan dibersihkan
 const TEMP_DIRS = ['temp', 'scratch', 'temp/downloads'];
@@ -12,14 +14,22 @@ export const cleanupService = {
         // Jalankan pembersihan pertama kali saat startup
         cleanupService.run();
 
-        // Jadwalkan pembersihan setiap 1 jam
+        // Jadwalkan pembersihan file setiap 1 jam
         setInterval(() => {
             cleanupService.run();
         }, 60 * 60 * 1000); 
+
+        // Jadwalkan pembersihan database setiap 24 jam
+        setInterval(async () => {
+            await firebaseRetentionService.cleanupOldData();
+        }, 24 * 60 * 60 * 1000);
     },
 
-    run: () => {
+    run: async () => {
         log.automation('Running hourly maintenance & cleanup...');
+        
+        // Run database cleanup
+        await usageService.cleanupUsageLog();
         
         let deletedCount = 0;
         const now = Date.now();

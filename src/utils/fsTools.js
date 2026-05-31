@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { log } from './logger.js';
 import { LINUX_ENV } from './system.js';
@@ -188,7 +188,9 @@ export const fsTools = {
 
         const validActions = ['pause', 'next', 'previous'];
         if (validActions.includes(action)) {
-            exec(`playerctl -p spotify ${action === 'previous' ? 'previous' : action}`);
+            // Using spawn to avoid shell injection
+            const safeAction = action === 'previous' ? 'previous' : action;
+            spawn('playerctl', ['-p', 'spotify', safeAction]);
             return `Berhasil mengirim perintah ${action} ke Spotify Lokal.`;
         }
 

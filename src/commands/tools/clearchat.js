@@ -1,9 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
+import { db } from '../../services/firebaseService.js';
 import { settings } from '../../config/settings.js';
 import { aiCache } from '../../services/aiCache.js';
 import { log } from '../../utils/logger.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export const help = `🧹 *Bantuan !clearchat*
 
@@ -18,13 +16,18 @@ export default async (sock, m, args) => {
     try {
         log.wa(`Clearing history for: ${remoteJid}`);
         
-        // 1. Clear Supabase
-        const { error } = await supabase
-            .from('memories')
-            .delete()
-            .eq('user_id', remoteJid);
+        // 1. Clear Firestore
+        const snapshot = await db.collection('memories')
+            .where('user_id', '==', remoteJid)
+            .get();
 
-        if (error) throw error;
+        if (!snapshot.empty) {
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+        }
 
         // 2. Clear AI Cache
         aiCache.clear(remoteJid);

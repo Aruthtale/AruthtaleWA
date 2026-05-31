@@ -6,6 +6,8 @@ import { cleanupService } from './src/services/cleanup.js';
 import { healthService } from './src/system/health.js';
 import { alertService } from './src/watchers/alertService.js';
 import { backupService } from './src/workers/backupWorker.js';
+import { dashboardService } from './src/server/dashboard.js';
+import { firebaseBridge } from './src/services/firebaseBridge.js';
 
 const start = async () => {
     try {
@@ -13,6 +15,9 @@ const start = async () => {
         
         // 1. Connect to WhatsApp
         const sock = await connectToWhatsApp();
+        
+        // 1.5 Start Firebase Bridge
+        firebaseBridge.listenToFlutterCommands(sock);
         
         // 2. Start Automation Watchers
         startIdleWatcher(sock);
@@ -23,6 +28,7 @@ const start = async () => {
         healthService.initGracefulShutdown(sock);
         alertService.init(sock);
         backupService.init();
+        dashboardService.init();
         
         // 4. Start Reminder & Automation Services
         const { reminderService } = await import('./src/services/reminderService.js');

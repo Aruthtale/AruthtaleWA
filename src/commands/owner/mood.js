@@ -1,9 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
+import { db } from '../../services/firebaseService.js';
 import { settings } from '../../config/settings.js';
 import { aiProvider } from '../../ai/provider.js';
 import { log } from '../../utils/logger.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export const help = `🧠 *Bantuan !mood*
 
@@ -26,20 +24,25 @@ export default async (sock, m, args) => {
     try {
         await sock.sendMessage(remoteJid, { text: '🔍 *Menganalisis jurnal dan pola interaksi seminggu terakhir...*' }, { quoted: m });
 
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
         // Fetch last 7 days of owner messages
-        const { data: logs, error } = await supabase
-            .from('memories')
-            .select('content, created_at')
-            .eq('user_id', senderNumber)
-            .eq('role', 'user')
-            .gte('created_at', sevenDaysAgo)
-            .order('created_at', { ascending: true });
+        const snapshot = await db.collection('memories')
+            .where('user_id', '==', remoteJid)
+            .where('role', '==', 'user')
+            .where('created_at', '>=', sevenDaysAgo)
+            .orderBy('created_at', 'asc')
+            .get();
 
-        if (error) throw error;
+        const logs = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                ...data,
+                created_at: data.created_at.toDate().toISOString()
+            };
+        });
 
-        if (!logs || logs.length < 5) {
+        if (logs.length < 5) {
             return await sock.sendMessage(remoteJid, { text: '⚠️ Data tidak cukup untuk melakukan analisis mood. Teruslah berinteraksi dan melakukan journaling malam!' });
         }
 

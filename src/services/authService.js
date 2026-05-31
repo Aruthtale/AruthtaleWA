@@ -1,8 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { select, insert, db, firebaseAdmin } from './firebaseService.js';
 import { settings } from '../config/settings.js';
 import { log } from '../utils/logger.js';
-
-const supabase = createClient(settings.supabaseUrl, settings.supabaseKey);
 
 export const authService = {
     /**
@@ -15,21 +13,18 @@ export const authService = {
         const isStaticAuth = settings.authorizedNumbers.some(num => number === num.trim());
         if (isStaticAuth) return true;
 
-        // 2. Check Supabase (dynamic)
+        // 2. Check Firestore (dynamic)
         try {
-            const { data, error } = await supabase
-                .from('whitelist')
-                .select('number')
-                .eq('number', number)
-                .single();
+            const { data, error } = await select('whitelist', [
+                { col: 'number', op: '==', val: number }
+            ]);
 
             if (error) {
-                if (error.code === 'PGRST116') return false; // Not found
                 log.error(`Auth DB Error: ${error.message}`);
                 return false;
             }
 
-            return !!data;
+            return data && data.length > 0;
         } catch (err) {
             log.error(`Auth Service Error: ${err.message}`);
             return false;
@@ -43,12 +38,14 @@ export const authService = {
      */
     addAuthorized: async (number, name = 'Added via Bot') => {
         try {
-            const { error } = await supabase
-                .from('whitelist')
-                .upsert([{ number, name }]);
+            // Use number as doc ID for easy upsert
+            await db.collection('whitelist').doc(number).set({
+                number,
+                name,
+                updated_at: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
 
-            if (error) throw error;
-            log.success(`Added ${number} to dynamic whitelist.`);
+            log.success(`Added/Updated ${number} in dynamic whitelist.`);
             return true;
         } catch (err) {
             log.error(`Failed to add auth: ${err.message}`);
@@ -61,10 +58,7 @@ export const authService = {
      */
     listAuthorized: async () => {
         try {
-            const { data, error } = await supabase
-                .from('whitelist')
-                .select('*');
-
+            const { data, error } = await select('whitelist');
             if (error) throw error;
             return data;
         } catch (err) {
@@ -78,12 +72,8 @@ export const authService = {
      */
     removeAuthorized: async (number) => {
         try {
-            const { error } = await supabase
-                .from('whitelist')
-                .delete()
-                .eq('number', number);
-
-            if (error) throw error;
+            await db.collection('whitelist').doc(number).delete();
+            log.success(`Removed ${number} from dynamic whitelist.`);
             return true;
         } catch (err) {
             log.error(`Failed to remove auth: ${err.message}`);
